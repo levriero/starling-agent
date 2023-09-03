@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"encoding/csv"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Transaction struct {
@@ -32,7 +34,7 @@ const (
 )
 
 func main() {
-	f, err := os.Open("statement.csv")
+	f, err := os.Open(os.Args[1])
 
 	if err != nil {
 		log.Fatal(err)
@@ -40,7 +42,13 @@ func main() {
 
 	defer f.Close()
 
-	reader := csv.NewReader(f)
+	output, err := os.Create("result.csv")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer output.Close()
+
+	reader := csv.NewReader(bufio.NewReader(f))
 
 	// Ignore CSV header
 	_, err = reader.Read()
@@ -48,6 +56,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	writer := csv.NewWriter(bufio.NewWriter(output))
+	defer writer.Flush()
 
 	for {
 		row, err := reader.Read()
@@ -73,7 +84,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Println(Transaction{
+		transaction := Transaction{
 			Date:             row[date],
 			CounterParty:     row[counterParty],
 			Reference:        row[reference],
@@ -82,6 +93,11 @@ func main() {
 			Notes:            row[notes],
 			Amount:           rowAmount,
 			Balance:          rowBalance,
-		})
+		}
+
+		transactionNotes := []string{transaction.CounterParty, transaction.Reference, transaction.Kind, transaction.SpendingCategory, transaction.Notes}
+
+		csvRow := []string{transaction.Date, fmt.Sprint(transaction.Amount), strings.Join(transactionNotes, " ")}
+		writer.Write(csvRow)
 	}
 }
