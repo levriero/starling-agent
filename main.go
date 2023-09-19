@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -34,52 +35,53 @@ const (
 )
 
 func main() {
-	f, err := os.Open(os.Args[1])
+	if len(os.Args) <= 1 {
+		log.Fatal("Must pass a CSV file path")
+	}
 
+	input, err := os.Open(os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	defer f.Close()
+	inputFileName := input.Name()
+	outputFileName := fmt.Sprintf("%v-result.csv", strings.TrimSuffix(inputFileName, filepath.Ext(inputFileName)))
 
-	output, err := os.Create("result.csv")
+	output, err := os.Create(outputFileName)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	defer input.Close()
 	defer output.Close()
 
-	reader := csv.NewReader(bufio.NewReader(f))
+	generateCSV(input, output)
+}
+
+func generateCSV(input, output *os.File) {
+	reader := csv.NewReader(bufio.NewReader(input))
+	writer := csv.NewWriter(bufio.NewWriter(output))
+
+	defer writer.Flush()
 
 	// Ignore CSV header
-	_, err = reader.Read()
-
+	_, err := reader.Read()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	writer := csv.NewWriter(bufio.NewWriter(output))
-	defer writer.Flush()
 
 	for {
 		row, err := reader.Read()
-
-		if err == io.EOF {
+		if err == io.EOF || err != nil {
 			break
 		}
 
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// Break if we can't parse the transaction amount
+		// Convert amount and balance string values to floats
 		rowAmount, err := strconv.ParseFloat(row[amount], 64)
-
 		if err != nil {
 			log.Fatal(err)
 		}
-
 		rowBalance, err := strconv.ParseFloat(row[balance], 64)
-
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -95,9 +97,26 @@ func main() {
 			Balance:          rowBalance,
 		}
 
-		transactionNotes := []string{transaction.CounterParty, transaction.Reference, transaction.Kind, transaction.SpendingCategory, transaction.Notes}
+		notes := buildNotes(transaction)
+		csvRow := []string{transaction.Date, fmt.Sprint(transaction.Amount), notes}
 
-		csvRow := []string{transaction.Date, fmt.Sprint(transaction.Amount), strings.Join(transactionNotes, " ")}
 		writer.Write(csvRow)
 	}
+
+	log.Printf("Statement suceessfully extracted.")
+}
+
+// FreeAgent's CSV imports are quite basic, this function retains the data from Starling
+// by adding it as a single "note" in FreeAgent's accepted CSV format
+// See: https://support.freeagent.com/hc/en-gb/articles/115001222564
+func buildNotes(transaction Transaction) string {
+	transactionNotes := []string{
+		transaction.CounterParty,
+		transaction.Reference,
+		transaction.Kind,
+		transaction.SpendingCategory,
+		transaction.Notes,
+	}
+
+	return strings.Join(transactionNotes, " ")
 }
